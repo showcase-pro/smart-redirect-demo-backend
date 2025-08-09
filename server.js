@@ -790,11 +790,11 @@ function getRiskDistribution(clicks) {
 }
 
 function getFilterActions(clicks) {
-  const actions = {};
-  clicks.forEach(click => {
-    actions[click.filterAction] = (actions[click.filterAction] || 0) + 1;
-  });
-  return actions;
+  // Since we no longer store filterAction for privacy, return basic stats
+  return {
+    allowed: clicks.length,
+    total: clicks.length
+  };
 }
 
 function getCountryStats(clicks) {
