@@ -8,14 +8,47 @@ const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const geoip = require('geoip-lite');
 const UAParser = require('ua-parser-js');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// In-memory storage for demo (in production, use database)
-const links = new Map();
-const redirectRules = new Map();
-const clicksData = [];
+// File-based storage using standard /tmp directory
+const dataDir = '/tmp';
+const linksFile = path.join(dataDir, 'links.json');
+const rulesFile = path.join(dataDir, 'rules.json');
+const clicksFile = path.join(dataDir, 'clicks.json');
+
+// Storage utility functions
+const loadData = (filePath, defaultValue = {}) => {
+  try {
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.log(`Error loading ${filePath}:`, error.message);
+  }
+  return defaultValue;
+};
+
+const saveData = (filePath, data) => {
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.log(`Error saving ${filePath}:`, error.message);
+  }
+};
+
+// Initialize storage
+let linksData = loadData(linksFile, {});
+let rulesData = loadData(rulesFile, {});
+let clicksData = loadData(clicksFile, []);
+
+// Convert to Maps for compatibility
+const links = new Map(Object.entries(linksData));
+const redirectRules = new Map(Object.entries(rulesData));
 const ipCache = new Map();
 
 // Middleware
@@ -34,10 +67,43 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// IP Analysis Service (Mock Implementation for Demo)
+// Save data helper functions
+const saveLinks = () => saveData(linksFile, Object.fromEntries(links));
+const saveRules = () => saveData(rulesFile, Object.fromEntries(redirectRules));
+const saveClicks = () => saveData(clicksFile, clicksData);
+
+// IP Analysis Service (Enhanced for Demo)
 class MockIPAnalysisService {
   constructor() {
     this.demoData = {
+      // Japanese IPs
+      '216.144.245.174': {
+        country: 'JP', 
+        isVPN: false, 
+        isProxy: false, 
+        isTor: false,
+        riskScore: 15, 
+        isp: 'NTT Communications',
+        connectionType: 'residential'
+      },
+      '133.130.120.19': {
+        country: 'JP', 
+        isVPN: true, 
+        isProxy: false, 
+        isTor: false,
+        riskScore: 45, 
+        isp: 'SoftBank',
+        connectionType: 'datacenter'
+      },
+      '210.152.51.66': {
+        country: 'JP', 
+        isVPN: false, 
+        isProxy: false, 
+        isTor: false,
+        riskScore: 5, 
+        isp: 'KDDI Corporation',
+        connectionType: 'mobile'
+      },
       // European IPs (with VPN detection)
       '185.220.101.42': {
         country: 'DE', 
@@ -589,6 +655,25 @@ function initializeDemoData() {
       actionType: 'redirect',
       priority: 2,
       name: 'Europe → Reddit (EU Promo)'
+    },
+    // Japanese specific redirects
+    {
+      id: uuidv4(),
+      linkId: demoLinks[0].id,
+      countryCodes: ['JP'],
+      targetUrl: 'https://www.nintendo.com/jp/',
+      actionType: 'redirect',
+      priority: 1,
+      name: 'Japan → Nintendo Japan (Special Offer)'
+    },
+    {
+      id: uuidv4(),
+      linkId: demoLinks[1].id,
+      countryCodes: ['JP'],
+      targetUrl: 'https://www.yahoo.co.jp',
+      actionType: 'redirect',
+      priority: 1,
+      name: 'Japan → Yahoo Japan (JP Promo)'
     }
   ];
 
@@ -655,10 +740,12 @@ function logClick(linkId, ip, userAgent, ipAnalysis, targetUrl, filterDecision) 
   };
 
   clicksData.push(clickData);
+  saveClicks();
   
   // Keep only last 1000 clicks for demo
   if (clicksData.length > 1000) {
     clicksData.shift();
+    saveClicks();
   }
 
   return clickData;
@@ -715,6 +802,7 @@ app.post('/api/links', (req, res) => {
   };
 
   links.set(newLink.id, newLink);
+  saveLinks();
   
   res.json({ success: true, data: newLink });
 });
@@ -742,6 +830,7 @@ app.post('/api/links/:linkId/rules', (req, res) => {
   };
 
   redirectRules.set(newRule.id, newRule);
+  saveRules();
   
   res.json({ success: true, data: newRule });
 });
@@ -756,9 +845,9 @@ app.get('/api/analytics/summary', (req, res) => {
     todayClicks: recentClicks.length,
     totalLinks: links.size,
     activeLinks: Array.from(links.values()).filter(link => link.isActive).length,
-    topCountries: this.getTopCountries(recentClicks),
-    riskDistribution: this.getRiskDistribution(recentClicks),
-    filterActions: this.getFilterActions(recentClicks)
+    topCountries: getTopCountries(recentClicks),
+    riskDistribution: getRiskDistribution(recentClicks),
+    filterActions: getFilterActions(recentClicks)
   };
 
   res.json({ success: true, data: summary });
