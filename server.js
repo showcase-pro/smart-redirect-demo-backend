@@ -10,9 +10,11 @@ const geoip = require('geoip-lite');
 const UAParser = require('ua-parser-js');
 const fs = require('fs');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'demo-secret-key-change-in-production';
 
 // File-based storage using standard /tmp directory
 const dataDir = '/tmp';
@@ -917,33 +919,10 @@ app.get('/:shortCode', async (req, res) => {
       const redirectHTML = browserDetectionService.generateNativeBrowserHTML(targetUrl, userAgent);
       return res.send(redirectHTML);
     } else {
-      console.log(`🌐 Regular browser detected, redirecting to result page`);
+      console.log(`🌐 Regular browser detected, direct redirect to target`);
       
-      // Prepare data for redirect result page
-      const resultData = {
-        shortCode: shortCode,
-        originalUrl: targetUrl,
-        clientIP: clientIP,
-        country: ipAnalysis.country_code,
-        city: ipAnalysis.city,
-        isp: ipAnalysis.isp,
-        isVPN: ipAnalysis.is_vpn,
-        isProxy: ipAnalysis.is_proxy,
-        isTor: ipAnalysis.is_tor,
-        fraudScore: ipAnalysis.risk_score,
-        userAgent: userAgent,
-        browser: browserDetection.browser?.name,
-        platform: browserDetection.os?.name,
-        appliedRule: filterDecision.reason,
-        status: ipAnalysis.is_tor ? 'tor' : ipAnalysis.is_vpn ? 'vpn' : ipAnalysis.is_proxy ? 'proxy' : 'safe',
-        timestamp: new Date().toISOString()
-      };
-      
-      const encodedData = encodeURIComponent(JSON.stringify(resultData));
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      const redirectUrl = `${frontendUrl}/redirect-result?data=${encodedData}`;
-      
-      return res.redirect(302, redirectUrl);
+      // Direct redirect without exposing any sensitive information
+      return res.redirect(302, targetUrl);
     }
 
   } catch (error) {
