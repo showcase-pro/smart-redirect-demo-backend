@@ -1045,11 +1045,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Initialize demo data and start server
+// Initialize demo data
 initializeDemoData();
 
-app.listen(PORT, () => {
-  console.log(`
+// For Vercel deployment
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
+  // For local development
+  app.listen(PORT, () => {
+    console.log(`
 🚀 Smart Redirect Demo Server running on port ${PORT}
 
 📊 Demo Data:
@@ -1072,5 +1077,6 @@ app.listen(PORT, () => {
 📱 Admin Dashboard: Build frontend and access via React app
 
 🎯 Ready for client demo!
-  `);
-});
+    `);
+  });
+}
