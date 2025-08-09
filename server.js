@@ -1034,11 +1034,16 @@ app.post('/api/test-ip', async (req, res) => {
     const rules = Array.from(redirectRules.values())
       .sort((a, b) => (a.priority || 0) - (b.priority || 0));
 
+    console.log('Testing IP:', testIP);
+    console.log('IP Analysis result:', ipAnalysis);
+    console.log('Available rules:', rules.map(r => ({ countryCodes: r.countryCodes, ipRanges: r.ipRanges })));
+
     for (const rule of rules) {
       let ruleMatches = false;
       
-      // Check country codes
-      if (rule.countryCodes && rule.countryCodes.length > 0 && rule.countryCodes.includes(ipAnalysis.country_code)) {
+      // Check country codes - ipAnalysis returns 'country' not 'country_code'
+      if (rule.countryCodes && rule.countryCodes.length > 0 && rule.countryCodes.includes(ipAnalysis.country)) {
+        console.log(`Country match found: ${ipAnalysis.country} in`, rule.countryCodes);
         ruleMatches = true;
       }
       
@@ -1046,6 +1051,7 @@ app.post('/api/test-ip', async (req, res) => {
       if (rule.ipRanges && rule.ipRanges.length > 0) {
         for (const ipRange of rule.ipRanges) {
           if (isIPInRange(testIP, ipRange)) {
+            console.log(`IP range match found: ${testIP} in ${ipRange}`);
             ruleMatches = true;
             break;
           }
@@ -1070,10 +1076,26 @@ app.post('/api/test-ip', async (req, res) => {
 
     const result = {
       location: {
-        country: ipAnalysis.country_code,
-        countryName: ipAnalysis.country_name
+        country: ipAnalysis.country,
+        countryName: ipAnalysis.countryName,
+        region: ipAnalysis.region,
+        city: ipAnalysis.city
       },
-      ipAnalysis,
+      ipAnalysis: {
+        ip: testIP,
+        country: ipAnalysis.country,
+        country_code: ipAnalysis.country,
+        country_name: ipAnalysis.countryName,
+        region: ipAnalysis.region,
+        city: ipAnalysis.city,
+        is_vpn: ipAnalysis.isVPN,
+        is_proxy: ipAnalysis.isProxy,
+        is_tor: ipAnalysis.isTor,
+        is_mobile: false,
+        risk_score: ipAnalysis.riskScore,
+        isp: ipAnalysis.isp,
+        connection_type: ipAnalysis.connectionType
+      },
       appliedRule,
       targetUrl: targetUrl || '/unregistered',
       wouldRedirect: !!targetUrl,
