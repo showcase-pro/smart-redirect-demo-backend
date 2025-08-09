@@ -1097,7 +1097,7 @@ app.post('/api/test-ip', async (req, res) => {
         connection_type: ipAnalysis.connectionType
       },
       appliedRule,
-      targetUrl: targetUrl || '/unregistered',
+      targetUrl: targetUrl || 'https://smart-redirect-demo-backend.vercel.app/demo',
       wouldRedirect: !!targetUrl,
       browserDetection,
       filterDecision
