@@ -72,212 +72,101 @@ const saveLinks = () => saveData(linksFile, Object.fromEntries(links));
 const saveRules = () => saveData(rulesFile, Object.fromEntries(redirectRules));
 const saveClicks = () => saveData(clicksFile, clicksData);
 
-// IP Analysis Service (Enhanced for Demo)
-class MockIPAnalysisService {
+// Real IP Analysis Service using ipapi.co
+class IPAnalysisService {
   constructor() {
-    this.demoData = {
-      // Japanese IPs
-      '216.144.245.174': {
-        country: 'JP', 
-        isVPN: false, 
-        isProxy: false, 
-        isTor: false,
-        riskScore: 15, 
-        isp: 'NTT Communications',
-        connectionType: 'residential'
-      },
-      '133.130.120.19': {
-        country: 'JP', 
-        isVPN: true, 
-        isProxy: false, 
-        isTor: false,
-        riskScore: 45, 
-        isp: 'SoftBank',
-        connectionType: 'datacenter'
-      },
-      '210.152.51.66': {
-        country: 'JP', 
-        isVPN: false, 
-        isProxy: false, 
-        isTor: false,
-        riskScore: 5, 
-        isp: 'KDDI Corporation',
-        connectionType: 'mobile'
-      },
-      // European IPs (with VPN detection)
-      '185.220.101.42': {
-        country: 'DE', 
-        isVPN: true, 
-        isProxy: false, 
-        isTor: true,
-        riskScore: 95, 
-        isp: 'TorProject',
-        connectionType: 'datacenter'
-      },
-      '46.101.123.45': {
-        country: 'DE', 
-        isVPN: false, 
-        isProxy: false, 
-        isTor: false,
-        riskScore: 5, 
-        isp: 'Deutsche Telekom',
-        connectionType: 'residential'
-      },
-      '217.160.0.152': {
-        country: 'IT', 
-        isVPN: true, 
-        isProxy: true, 
-        isTor: false,
-        riskScore: 85, 
-        isp: 'NordVPN',
-        connectionType: 'datacenter'
-      },
-      '79.18.183.45': {
-        country: 'IT', 
-        isVPN: false, 
-        isProxy: false, 
-        isTor: false,
-        riskScore: 10, 
-        isp: 'TIM Italia',
-        connectionType: 'mobile'
-      },
-      // American IPs
-      '198.51.100.42': {
-        country: 'US', 
-        isVPN: true, 
-        isProxy: false, 
-        isTor: false,
-        riskScore: 75, 
-        isp: 'ExpressVPN',
-        connectionType: 'datacenter'
-      },
-      '172.217.14.110': {
-        country: 'US', 
-        isVPN: false, 
-        isProxy: false, 
-        isTor: false,
-        riskScore: 0, 
-        isp: 'Google LLC',
-        connectionType: 'datacenter'
-      },
-      '208.67.222.222': {
-        country: 'US', 
-        isVPN: false, 
-        isProxy: false, 
-        isTor: false,
-        riskScore: 5, 
-        isp: 'Verizon',
-        connectionType: 'residential'
-      },
-      // Irish IP
-      '52.210.112.33': {
-        country: 'IE', 
-        isVPN: false, 
-        isProxy: false, 
-        isTor: false,
-        riskScore: 15, 
-        isp: 'Amazon AWS Ireland',
-        connectionType: 'datacenter'
-      },
-      // French IP
-      '195.154.164.45': {
-        country: 'FR', 
-        isVPN: true, 
-        isProxy: true, 
-        isTor: false,
-        riskScore: 80, 
-        isp: 'ProtonVPN',
-        connectionType: 'datacenter'
-      }
-    };
+    this.cache = new Map();
+    this.cacheTimeout = 24 * 60 * 60 * 1000; // 24 hours
   }
 
   async analyzeIP(ip) {
     // Check cache first
-    if (ipCache.has(ip)) {
-      const cached = ipCache.get(ip);
-      if (Date.now() - cached.timestamp < 3600000) { // 1 hour cache
+    if (this.cache.has(ip)) {
+      const cached = this.cache.get(ip);
+      if (Date.now() - cached.timestamp < this.cacheTimeout) {
         return cached.data;
       }
     }
 
-    let result;
-
-    // Check if we have demo data for this IP
-    if (this.demoData[ip]) {
-      const demoData = this.demoData[ip];
-      result = {
-        ip,
-        country_code: demoData.country,
-        is_vpn: demoData.isVPN,
-        is_proxy: demoData.isProxy,
-        is_tor: demoData.isTor,
-        is_datacenter: demoData.connectionType === 'datacenter',
-        is_mobile: demoData.connectionType === 'mobile',
-        risk_score: demoData.riskScore,
-        isp: demoData.isp,
-        connection_type: demoData.connectionType,
-        provider: 'demo_service',
-        confidence: 'high',
-        analyzed_at: new Date().toISOString()
+    try {
+      // Use ipapi.co for real IP geolocation
+      const response = await fetch(`https://ipapi.co/${ip}/json/`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      const result = {
+        country: data.country_code || 'UNKNOWN',
+        countryName: data.country_name || 'Unknown',
+        region: data.region || '',
+        city: data.city || '',
+        isVPN: false, // ipapi.co doesn't provide this in free tier
+        isProxy: false,
+        isTor: false,
+        riskScore: this.calculateRiskScore(data),
+        isp: data.org || 'Unknown ISP',
+        connectionType: this.determineConnectionType(data.org || '')
       };
-    } else {
-      // Use geoip-lite for real IPs (fallback)
-      const geo = geoip.lookup(ip) || {};
+
+      // Cache the result
+      this.cache.set(ip, {
+        data: result,
+        timestamp: Date.now()
+      });
+
+      return result;
+    } catch (error) {
+      console.log(`Error analyzing IP ${ip}:`, error.message);
       
-      // Generate realistic data based on country
-      const riskScore = this.generateRiskScore(geo.country);
-      const vpnProbability = this.getVPNProbability(geo.country);
-      
-      result = {
-        ip,
-        country_code: geo.country || 'XX',
-        is_vpn: Math.random() < vpnProbability,
-        is_proxy: Math.random() < 0.1,
-        is_tor: Math.random() < 0.02,
-        is_datacenter: Math.random() < 0.3,
-        is_mobile: Math.random() < 0.6,
-        risk_score: riskScore,
+      // Fallback to basic analysis
+      const geoData = geoip.lookup(ip);
+      return {
+        country: geoData?.country || 'UNKNOWN',
+        countryName: geoData?.country || 'Unknown',
+        region: geoData?.region || '',
+        city: geoData?.city || '',
+        isVPN: false,
+        isProxy: false,
+        isTor: false,
+        riskScore: 50, // Default medium risk
         isp: 'Unknown ISP',
-        connection_type: 'unknown',
-        provider: 'geoip_fallback',
-        confidence: 'medium',
-        analyzed_at: new Date().toISOString()
+        connectionType: 'unknown'
       };
     }
-
-    // Cache the result
-    ipCache.set(ip, {
-      data: result,
-      timestamp: Date.now()
-    });
-
-    return result;
   }
 
-  generateRiskScore(country) {
-    const baseRisk = {
-      'US': 10, 'CA': 15, 'GB': 20, 'IE': 18, 'AU': 12,
-      'DE': 25, 'FR': 30, 'IT': 35, 'ES': 28, 'NL': 22,
-      'CN': 85, 'RU': 75, 'IR': 90, 'KP': 95
-    };
+  calculateRiskScore(data) {
+    let risk = 10; // Base risk
     
-    const base = baseRisk[country] || 30;
-    return Math.min(100, base + Math.floor(Math.random() * 20));
+    // Add risk based on country (simplified logic)
+    const highRiskCountries = ['CN', 'RU', 'IR', 'KP'];
+    if (highRiskCountries.includes(data.country_code)) {
+      risk += 40;
+    }
+    
+    // Check for datacenter/hosting providers
+    const org = (data.org || '').toLowerCase();
+    if (org.includes('hosting') || org.includes('cloud') || org.includes('datacenter')) {
+      risk += 30;
+    }
+    
+    return Math.min(risk, 100);
   }
 
-  getVPNProbability(country) {
-    const vpnUsage = {
-      'US': 0.15, 'CA': 0.18, 'GB': 0.20, 'IE': 0.16, 'AU': 0.19,
-      'DE': 0.25, 'FR': 0.22, 'IT': 0.28, 'ES': 0.24, 'NL': 0.35,
-      'CN': 0.60, 'RU': 0.45, 'IR': 0.70
-    };
-    
-    return vpnUsage[country] || 0.20;
+  determineConnectionType(org) {
+    const orgLower = org.toLowerCase();
+    if (orgLower.includes('mobile') || orgLower.includes('wireless')) {
+      return 'mobile';
+    } else if (orgLower.includes('hosting') || orgLower.includes('cloud') || orgLower.includes('datacenter')) {
+      return 'datacenter';
+    }
+    return 'residential';
   }
 }
 
-const ipAnalysisService = new MockIPAnalysisService();
+const ipAnalysisService = new IPAnalysisService();
 
 // Browser Detection Service
 class BrowserDetectionService {
@@ -583,21 +472,13 @@ const filteringEngine = new FilteringEngine();
 
 // Initialize demo data
 function initializeDemoData() {
-  // Create demo links
+  // Create single demo link
   const demoLinks = [
     {
       id: uuidv4(),
-      shortCode: 'demo1',
-      name: 'E-commerce Product Demo',
-      defaultUrl: 'https://www.google.com',
-      isActive: true,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: uuidv4(),
-      shortCode: 'promo2024',
-      name: 'Black Friday Campaign',
-      defaultUrl: 'https://www.google.com',
+      shortCode: 'demo',
+      name: 'Global Redirect Demo',
+      defaultUrl: 'https://www.wikipedia.org/wiki/Redirect',
       isActive: true,
       createdAt: new Date().toISOString()
     }
@@ -607,73 +488,87 @@ function initializeDemoData() {
     links.set(link.id, link);
   });
 
-  // Create demo redirect rules
+  // Create demo redirect rules for major countries
   const demoRules = [
-    // For demo1 link
+    // USA - Largest market
     {
       id: uuidv4(),
       linkId: demoLinks[0].id,
-      countryCodes: ['US', 'IE', 'GB', 'CA', 'AU'],
-      targetUrl: 'https://www.wikipedia.org',
-      actionType: 'redirect',
-      priority: 1,
-      name: 'Safe Countries → Wikipedia (Safe Page)'
-    },
-    {
-      id: uuidv4(),
-      linkId: demoLinks[0].id,
-      countryCodes: ['IT'],
+      countryCodes: ['US'],
       targetUrl: 'https://www.amazon.com',
       actionType: 'redirect',
-      priority: 2,
-      name: 'Italy → Amazon (Main Offer)'
+      priority: 1,
+      name: 'USA → Amazon US'
     },
+    // United Kingdom
     {
       id: uuidv4(),
       linkId: demoLinks[0].id,
-      countryCodes: ['DE', 'FR', 'ES', 'NL'],
+      countryCodes: ['GB'],
       targetUrl: 'https://www.bbc.com',
       actionType: 'redirect',
-      priority: 3,
-      name: 'Other EU → BBC (Alternative)'
-    },
-    // For promo2024 link
-    {
-      id: uuidv4(),
-      linkId: demoLinks[1].id,
-      countryCodes: ['US', 'CA'],
-      targetUrl: 'https://www.youtube.com',
-      actionType: 'redirect',
-      priority: 1,
-      name: 'North America → YouTube (US Promo)'
-    },
-    {
-      id: uuidv4(),
-      linkId: demoLinks[1].id,
-      countryCodes: ['IT', 'DE', 'FR', 'ES'],
-      targetUrl: 'https://www.reddit.com',
-      actionType: 'redirect',
       priority: 2,
-      name: 'Europe → Reddit (EU Promo)'
+      name: 'UK → BBC News'
     },
-    // Japanese specific redirects
+    // United Arab Emirates
     {
       id: uuidv4(),
       linkId: demoLinks[0].id,
-      countryCodes: ['JP'],
-      targetUrl: 'https://www.nintendo.com/jp/',
+      countryCodes: ['AE'],
+      targetUrl: 'https://www.aljazeera.com',
       actionType: 'redirect',
-      priority: 1,
-      name: 'Japan → Nintendo Japan (Special Offer)'
+      priority: 3,
+      name: 'UAE → Al Jazeera'
     },
+    // Germany - Major EU market
     {
       id: uuidv4(),
-      linkId: demoLinks[1].id,
-      countryCodes: ['JP'],
-      targetUrl: 'https://www.yahoo.co.jp',
+      linkId: demoLinks[0].id,
+      countryCodes: ['DE'],
+      targetUrl: 'https://www.spiegel.de',
       actionType: 'redirect',
-      priority: 1,
-      name: 'Japan → Yahoo Japan (JP Promo)'
+      priority: 4,
+      name: 'Germany → Der Spiegel'
+    },
+    // France
+    {
+      id: uuidv4(),
+      linkId: demoLinks[0].id,
+      countryCodes: ['FR'],
+      targetUrl: 'https://www.lemonde.fr',
+      actionType: 'redirect',
+      priority: 5,
+      name: 'France → Le Monde'
+    },
+    // Canada
+    {
+      id: uuidv4(),
+      linkId: demoLinks[0].id,
+      countryCodes: ['CA'],
+      targetUrl: 'https://www.cbc.ca',
+      actionType: 'redirect',
+      priority: 6,
+      name: 'Canada → CBC'
+    },
+    // Australia
+    {
+      id: uuidv4(),
+      linkId: demoLinks[0].id,
+      countryCodes: ['AU'],
+      targetUrl: 'https://www.abc.net.au',
+      actionType: 'redirect',
+      priority: 7,
+      name: 'Australia → ABC Australia'
+    },
+    // China - Large market
+    {
+      id: uuidv4(),
+      linkId: demoLinks[0].id,
+      countryCodes: ['CN'],
+      targetUrl: 'https://www.baidu.com',
+      actionType: 'redirect',
+      priority: 8,
+      name: 'China → Baidu'
     }
   ];
 
@@ -720,22 +615,14 @@ function getClientIP(req) {
 
 // Log click data
 function logClick(linkId, ip, userAgent, ipAnalysis, targetUrl, filterDecision) {
+  // Create minimal click data (no IP or sensitive info stored)
   const clickData = {
     id: uuidv4(),
     linkId,
-    ip,
-    countryCode: ipAnalysis.country_code,
-    isVPN: ipAnalysis.is_vpn,
-    isProxy: ipAnalysis.is_proxy,
-    isTor: ipAnalysis.is_tor,
-    isDatacenter: ipAnalysis.is_datacenter,
-    isMobile: ipAnalysis.is_mobile,
-    riskScore: ipAnalysis.risk_score,
-    isp: ipAnalysis.isp,
-    userAgent,
+    countryCode: ipAnalysis.country,
+    riskScore: ipAnalysis.riskScore,
+    connectionType: ipAnalysis.connectionType,
     targetUrl,
-    filterAction: filterDecision.action,
-    filterReason: filterDecision.reason,
     timestamp: new Date().toISOString()
   };
 
@@ -971,9 +858,9 @@ app.get('/:shortCode', async (req, res) => {
     // Analyze IP
     const ipAnalysis = await ipAnalysisService.analyzeIP(clientIP);
     console.log(`🌍 IP Analysis for ${clientIP}:`, {
-      country: ipAnalysis.country_code,
-      isVPN: ipAnalysis.is_vpn,
-      riskScore: ipAnalysis.risk_score,
+      country: ipAnalysis.country,
+      isVPN: ipAnalysis.isVPN,
+      riskScore: ipAnalysis.riskScore,
       isp: ipAnalysis.isp
     });
 
@@ -984,7 +871,7 @@ app.get('/:shortCode', async (req, res) => {
       .sort((a, b) => a.priority - b.priority);
 
     for (const rule of linkRules) {
-      if (rule.countryCodes.includes(ipAnalysis.country_code)) {
+      if (rule.countryCodes.includes(ipAnalysis.country)) {
         targetUrl = rule.targetUrl;
         console.log(`✅ Applied rule: ${rule.name} → ${targetUrl}`);
         break;
@@ -994,7 +881,7 @@ app.get('/:shortCode', async (req, res) => {
     // Apply filtering
     const filterDecision = await filteringEngine.shouldFilter(
       ipAnalysis, 
-      ipAnalysis.country_code, 
+      ipAnalysis.country, 
       link
     );
 
@@ -1090,7 +977,7 @@ app.post('/api/test-redirect/:shortCode', async (req, res) => {
 
     let appliedRule = null;
     for (const rule of linkRules) {
-      if (rule.countryCodes.includes(ipAnalysis.country_code)) {
+      if (rule.countryCodes.includes(ipAnalysis.country)) {
         targetUrl = rule.targetUrl;
         appliedRule = rule;
         break;
@@ -1099,7 +986,7 @@ app.post('/api/test-redirect/:shortCode', async (req, res) => {
 
     const filterDecision = await filteringEngine.shouldFilter(
       ipAnalysis, 
-      ipAnalysis.country_code, 
+      ipAnalysis.country, 
       link
     );
 
@@ -1107,11 +994,12 @@ app.post('/api/test-redirect/:shortCode', async (req, res) => {
 
     const result = {
       link: { id: link.id, shortCode: link.shortCode, name: link.name },
-      ipAnalysis,
+      location: {
+        country: ipAnalysis.country,
+        countryName: ipAnalysis.countryName
+      },
       appliedRule,
       targetUrl,
-      filterDecision,
-      browserDetection,
       wouldRedirect: filterDecision.action !== 'block'
     };
 
