@@ -1019,30 +1019,26 @@ app.get('/:shortCode', async (req, res) => {
   }
 });
 
-// Test endpoint for demo IPs
-app.post('/api/test-redirect/:shortCode', async (req, res) => {
-  const { shortCode } = req.params;
+// Test endpoint for IP analysis
+app.post('/api/test-ip', async (req, res) => {
   const { testIP, userAgent: testUserAgent } = req.body;
   
   try {
-    const link = Array.from(links.values()).find(l => l.shortCode === shortCode);
-    if (!link) {
-      return res.status(404).json({ success: false, message: 'Link not found' });
-    }
-
+    // Analyze the IP
     const ipAnalysis = await ipAnalysisService.analyzeIP(testIP);
     
-    let targetUrl = link.defaultUrl;
-    const linkRules = Array.from(redirectRules.values())
-      .filter(rule => rule.linkId === link.id)
-      .sort((a, b) => a.priority - b.priority);
-
+    // Find matching redirect rule
+    let targetUrl = null;
     let appliedRule = null;
-    for (const rule of linkRules) {
+    
+    const rules = Array.from(redirectRules.values())
+      .sort((a, b) => (a.priority || 0) - (b.priority || 0));
+
+    for (const rule of rules) {
       let ruleMatches = false;
       
       // Check country codes
-      if (rule.countryCodes && rule.countryCodes.includes(ipAnalysis.country)) {
+      if (rule.countryCodes && rule.countryCodes.length > 0 && rule.countryCodes.includes(ipAnalysis.country_code)) {
         ruleMatches = true;
       }
       
@@ -1063,29 +1059,32 @@ app.post('/api/test-redirect/:shortCode', async (req, res) => {
       }
     }
 
-    const filterDecision = await filteringEngine.shouldFilter(
-      ipAnalysis, 
-      ipAnalysis.country, 
-      link
-    );
-
+    // Detect browser
     const browserDetection = browserDetectionService.detect(testUserAgent || '');
 
+    // Determine filter decision
+    const filterDecision = {
+      action: targetUrl ? 'redirect' : 'show_info',
+      reason: targetUrl ? 'Matched redirect rule' : 'No matching rule - show unregistered client page'
+    };
+
     const result = {
-      link: { id: link.id, shortCode: link.shortCode, name: link.name },
       location: {
-        country: ipAnalysis.country,
-        countryName: ipAnalysis.countryName
+        country: ipAnalysis.country_code,
+        countryName: ipAnalysis.country_name
       },
+      ipAnalysis,
       appliedRule,
-      targetUrl,
-      wouldRedirect: filterDecision.action !== 'block'
+      targetUrl: targetUrl || '/unregistered',
+      wouldRedirect: !!targetUrl,
+      browserDetection,
+      filterDecision
     };
 
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error('Test redirect error:', error);
-    res.status(500).json({ success: false, message: 'Test failed' });
+    console.error('Test IP error:', error);
+    res.status(500).json({ success: false, message: 'Test failed', error: error.message });
   }
 });
 
